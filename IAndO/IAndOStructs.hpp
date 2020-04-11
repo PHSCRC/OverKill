@@ -1,5 +1,6 @@
-#pragma pack(push, 1)
+#include <arpa/inet.h>
 
+#pragma pack(push, 1)
 //htons/l overloads
 uint32_t hton(uint32_t t){
   return htonl(t);
@@ -21,18 +22,18 @@ uint16_t ntoh(uint8_t t){
 }
 
 //base types
-struct timestamp {
+struct timestamp{
   static std::array<ros::Time, 255> timeArray;
   static void processNMessage(uint8_t n, timeval* tv) {
     timeArray[n]=kernelTimeToTime(tv);
   }
-
-  uint8_t n;
-  uint8_t msSinceN;
   operator ros::Time() const{
     return timeArray[n]+ros::Duration(0, (uint32_t)msSinceN*1000000);
   }
-};
+
+  uint8_t n;
+  uint8_t msSinceN;
+}
 
 //uint32_t if size=4, uint16_t if size==2 and a transparent if size==1
 template<typename T, typename U=typename std::conditional<sizeof(T)==4, uint32_t,
