@@ -44,15 +44,39 @@ public:
 
 void cmd_vel_callback(const geometry_msgs::Twist* cmd){
   static MessageSender<cmd_vel_struct> sender;
-  sender.struct_ptr->velX=(float32)cmd.linear.x;
-  sender.struct_ptr->velTheta=(float32)cmd.angular.z;
+  sender.struct_ptr->velX=static_cast<fixed_point<2, true>>(cmd.linear.x);
+  sender.struct_ptr->velTheta=static_cast<fixed_point<14, false>>(cmd.angular.z);
   sender.sendFrame();
 };
 
+void global_state_callback(const std_msgs::Byte* in){
+  static MessageSender<global_state_struct> sender;
+  sender.struct_ptr->global_state=*in;
+  sender.sendFrame();
+};
+
+void move_stat_baby_callback(const std_msgs::Byte* in){
+  static MessageSender<move_stat_baby_struct> sender;
+  sender.struct_ptr->response=*in;
+  sender.sendFrame();
+}
+
+void move_stat_candle_callback(const std_msgs::Byte* in){
+  static MessageSender<move_stat_candle_struct> sender;
+  sender.struct_ptr->response=*in;
+  sender.sendFrame();
+}
+
+void set_handle_callback(const std_msgs::Byte* in){
+  static MessageSender<set_handle_struct> sender;
+  sender.struct_ptr->ledBitSet=*in;
+  sender.sendFrame();
+}
+
 class InputPublisher{
   Nodehandle nh;
-  ros::Publisher baby_position_pubber=nh.adverstise<overkill_msgs::PoseStampedWithId>("baby_position", 10);
-  ros::Publisher candle_position_pubber=nh.adverstise<overkill_msgs::PoseStampedWithId>("candle_position", 10);
+  ros::Publisher baby_position_pubber=nh.adverstise<geometry_msgs::PoseStamped>("baby_position", 10);
+  ros::Publisher candle_position_pubber=nh.adverstise<overkill_msgs::PoseStampedWithCertainty>("candle_position", 10);
   ros::Publisher odom0_pubber=nh.adverstise<geometry_msgs::PoseStamped>("odom0", 10);
   ros::Publisher odom1_pubber=nh.adverstise<geometry_msgs::PoseStamped>("odom1", 10);
   ros::Publisher light_sensor_pubber=nh.adverstise<overkill_msgs::BoolStamped>("odom1", 10);
@@ -162,9 +186,9 @@ class InputPublisher{
   }
   void candle_found_pub(__u8* data){
     //we can ignore these messages if we're not in the correct spot. These are checked on the send side, but it doesn't hurt to double check
-    if(globalState==LOOKING_FOR_BABY || globalState==PICKED_UP_BABY || globalState==CANDLE_SEARCH_MAZE_2 || globalState==CANDLE_SEARCH_MAZE_1 || globalState==EXT_CANDLE_2){
+    if(globalState==LOOKING_FOR_BABY || globalState==CANDLE_SEARCH_MAZE_2 || globalState==CANDLE_SEARCH_MAZE_1 || globalState==EXT_CANDLE_2){
       candle_found_struct * recv=(candle_found_struct *)data;
-      candle_position_pubber.publish(getPoseStampedFromCameraInfo(static_cast<uint8_t>(recv->rotation), id, recv->combinedDistanceData.distance(), recv->combinedDistanceData.angle(), recv->combinedDistanceData.targetFacingAngle(), "candle_camera"));
+      candle_position_pubber.publish({getPoseStampedFromCameraInfo(static_cast<uint8_t>(recv->rotation), id, recv->combinedDistanceData.distance(), recv->combinedDistanceData.angle(), recv->combinedDistanceData.targetFacingAngle(), "candle_camera"), recv->certainty});
     }
   }
   void pickup_stat_baby_pub(__u8* data){
@@ -231,7 +255,7 @@ class InputPublisher{
           ROS_ERROR("message of unknown id received, make sure you've copied IAndOStructs over to all parties");
         break;
       }
-      ros::spinOnce();
+      ros::spinOnce(); //check if we've changed maze and update global state if we have
     }
     perror(errno);
   }
@@ -259,6 +283,10 @@ int main(){
   std::thread pub_thread(&InputPublisher::receiveAllAvailableMessagesOnBus, &pubber);
 
   ros::Subscriber cmd_vel_sub = nh.subscribe("cmd_vel", 2, cmd_vel_callback);
+  ros::Subscriber global_state_sub = nh.subscribe("global_state", 2, global_state_callback);
+  ros::Subscriber move_stat_baby_sub = nh.subscribe("baby_move_stat", 2, move_stat_baby_callback);
+  ros::Subscriber move_stat_candle_sub = nh.subscribe("candle_move_stat", 2, move_stat_candle_callback);
+  ros::Subscriber set_handle_sub = nh.subscribe("set_handle", 2, set_handle_callback);
   //now just process the callbacks and send off messages in this main thread
   ros::spin();
 

@@ -50,6 +50,7 @@ struct State{
   ros::Publisher baby_move_stat_pubber;
   ros::Publisher candle_move_stat_pubber;
   ros::Publisher maze_publisher;
+  ros::Publisher set_handle_publisher;
 
 
 
@@ -62,6 +63,7 @@ struct State{
     baby_move_stat_pubber=nh.adverstise<std_msgs::Byte>("baby_move_stat", 10);
     candle_move_stat_pubber=nh.adverstise<std_msgs::Byte>("candle_move_stat", 10);
     maze_publisher=nh.adverstise<std_msgs::Byte>("maze_number",10);
+    set_handle_publisher=nh.adverstise<std_msgs::Byte>("set_handle",10);
   }
 
   const bool rampedHallway=false;
@@ -73,7 +75,6 @@ struct State{
   //the bottom of the static_map
   const geometry_msgs::Pose maze2RampStart={{1.22,0,0}, facingDown};
 
-x
 
   //TODO all of these things
   //30 back
@@ -100,6 +101,12 @@ x
     {{}, }
   }};
 
+  std::bitset<3> ledHandle; //least significant bit first. This is sound, fire, baby
+
+  void publishHandle(){
+    set_handle_publisher.publish((uint8_t)ledHandle.to_ulong());
+  }
+
   //messages that need to be stored
   sensor_msgs::LaserScan latest_rawScan;
   bool lightSensor;
@@ -111,7 +118,7 @@ x
   int whichMazeAreWeIn=1;
 
   bool haveSeenCandle=false;
-  geometry_msgs::PoseStamped possibleCandleLocation;
+  geometry_msgs::PoseStamped bestPossibleCandleLocation;
 
   int lastRoomSearchedBeforeReturn;
 
@@ -147,13 +154,30 @@ x
 
   void globalStateCallback(const std_msgs::Byte* state){
     globalState=*state;
+    if(globalState==EXT_CANDLE_1 || globalState==EXT_CANDLE_2 || globalState==EXT_CANDLE_3){
+      ledBitSet.reset(FIRE_HANDLE_BITSET);
+      publishHandle();
+    }
   }
   void lightSensorCallback(const overkill_msgs::BoolStamped* onOff){
     lightSensor=*onOff;
   }
-  void candleCallback(const geometry_msgs::PoseStamped* candle_msg){
-    tf2_ros::doTransform(*candle_msg, latestCandleGoalPose, extinguishPoseFromCandle);
-    latestCandleGoalPose.header.stamp=candle_msg.header.stamp;
+  void candleCallback(const overkill_msgs::PoseStampedWithCertainty* candle_msg){
+    static uint8_t maxCertaintySoFar=50; //threshold for whether we will go directly to it upon return
+    if(globalState==LOOKING_FOR_BABY){
+      if(candle_msg->certainty>maxCertaintySoFar){
+        haveSeenCandle=true;
+        bestPossibleCandleLocation=candle_msg->pose_stamped;
+        maxCertaintySoFar=candle_msg->certainty;
+      }
+    } else {
+      tf2_ros::doTransform(candle_msg->pose_stamped, latestCandleGoalPose, extinguishPoseFromCandle);
+      latestCandleGoalPose.header.stamp=candle_msg->pose_stamped.header.stamp;
+      if(!ledBitSet.test(FIRE_HANDLE_BITSET)){
+        ledBitSet.set(FIRE_HANDLE_BITSET);
+        publishHandle();
+      }
+    }
   }
   void babyCallback(const geometry_msgs::PoseStamped* baby_msg){
     tf2_ros::doTransform(*baby_msg, latestBabyGoalPose, goalPoseFromBaby);
@@ -161,6 +185,10 @@ x
 
     tf2_ros::doTransform(*baby_msg, latestBabyGoalPose, pickupPoseFromBaby);
     latestBabyGoalPose.header.stamp=baby_msg.header.stamp;
+    if(!ledBitSet.test(BABY_HANDLE_BITSET)){
+      ledBitSet.set(BABY_HANDLE_BITSET);
+      publishHandle();
+    }
   }
 };
 
@@ -305,7 +333,7 @@ inline void searchForBabyAndCandle(State& state){
     goal.target_pose.pose=roomSearchLocations[i];
     goal.target_pose.header.stamp = ros::Time::now();
     state.mbac.sendGoal(goal);
-    //callbacks should automatically add things to possibleCandleLocation and take care of foundBaby
+    //callbacks should automatically add things to possible candle Location and take care of foundBaby
     while(ros::ok() && state.notStopping && !(ros::Time::now()-state.latestBabyGoalPose.header.stamp).toSec()<0.5 && !state.mbac.waitForResult(ros::Duration(0.05))){
       ros::spinOnce();
     }
@@ -415,7 +443,7 @@ inline returnBaby(State& state){
 inline searchForCandle(State& state, int maze){
   move_base_msgs::MoveBaseGoal goal;
   if(maze==2 && haveSeenCandle){
-    goal.target_pose=possibleCandleLocation;
+    goal.target_pose=bestPossibleCandleLocation;
     state.mbac.sendGoal(goal);
     waitForDestination(state);
     if(sweep(state, false, true)){

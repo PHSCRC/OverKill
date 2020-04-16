@@ -14,7 +14,13 @@ enum GlobalState{
   CANDLE_SEARCH_MAZE_1,
   EXT_CANDLE_2,
   EXT_CANDLE_3
-}
+};
+
+enum ledBitSetEnum{
+  SOUND_HANDLE_BITSET=0,
+  FIRE_HANDLE_BITSET,
+  BABY_HANDLE_BITSET
+};
 
 //htons/l overloads
 uint32_t hton(uint32_t t){
@@ -163,6 +169,7 @@ public:
     }
 };
 
+//fits 3 fixed point numbers into 32 bits. Distance is stored in a 10 bit number from 0-2, then the two angle are stored in an 11 bit number from 0-7 (0-2pi)
 class CombinedDistanceData{
   uint32_t data;
   static constexpr uint32_t elevenBitMask=0x7FF;
@@ -277,35 +284,36 @@ struct baby_found_struct{
 };
 struct candle_found_struct{
   static constexpr uint16_t id=idProvider(candle_found_priority);
-  static constexpr uint8_t size=7;
+  static constexpr uint8_t size=8;
 
   flipped<CombinedDistanceData> combinedDistanceData;
   timestamp ts;
   flipped<uint8_t> rotation;
+  flipped<uint8_t> certainty;
 };
 
 struct move_stat_baby_struct{
   static constexpr uint16_t id=idProvider(move_stat_baby_priority);
-  static constexpr uint8_t size=2;
+  static constexpr uint8_t size=1;
 
   flipped<uint8_t> response;
 };
 struct move_stat_candle_struct{
   static constexpr uint16_t id=idProvider(move_stat_candle_priority);
-  static constexpr uint8_t size=2;
+  static constexpr uint8_t size=1;
 
   flipped<uint8_t> response;
 };
 
 struct pickup_stat_baby_struct{
   static constexpr uint16_t id=idProvider(pickup_stat_baby_priority);
-  static constexpr uint8_t size=2;
+  static constexpr uint8_t size=1;
 
   flipped<uint8_t> update;
 };
 struct ext_stat_candle_struct{
   static constexpr uint16_t id=idProvider(ext_stat_candle_priority);
-  static constexpr uint8_t size=2;
+  static constexpr uint8_t size=1;
 
   flipped<uint8_t> update;
 };
