@@ -76,7 +76,6 @@ struct State{
   const geometry_msgs::Pose maze2RampStart={{1.22,0,0}, facingDown};
 
 
-  //TODO all of these things
   //30 back
   const geometry_msgs::TransformStamped goalPoseFromBaby={{0, ros::Time(0), "map"}, "map",
     {{-0.3, 0, 0}, geometry_msgs::Quaternion()}
@@ -92,8 +91,8 @@ struct State{
   };
 
 
-  //this doesn't change between mazes TODO add these
   //double braces because cpp stupidity
+  //OVERKILL_TODO add room search locations
   const std::array<geometry_msgs::Pose, 4> roomSearchLocations={{
     {{}, },
     {{}, },

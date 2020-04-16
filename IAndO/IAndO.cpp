@@ -108,14 +108,7 @@ class InputPublisher{
 
   tf2_ros::Buffer tfBuffer;
   tf2_ros::TransformListener tfListener(tfBuffer);
-
-
-  //TODO create all 10 static publishers which camera0 to camera 9 which are 36 deg apart relate cameraPOS to rotate_base
-
-  //TODO relate rotate_base to base_link, cause they're probably not exactly lined up
-
-
-
+  tf2_ros::TransformBroadcaster tfBroadcaster;
 
   //is all this map stuff necesary? no. But it makes it very general and generalizes to as many odometry publishers as I want
   void odom_dPos_pub(__u8* data, uint16_t fromPriority){
@@ -135,7 +128,8 @@ class InputPublisher{
       float64 vY=dY/dT;
       float64 vTheta=dTheta/dT;
 
-      //TODO build covariance estimate using measured data
+      //OVERKILL_TODO build covariance estimate using measured data
+      //OVERKILL_TODO build/use kallman filter node
 
       geometry_msgs::TwistWithCovarianceStamped odom_obj{};
 
@@ -181,7 +175,7 @@ class InputPublisher{
     //we can ignore these messages if we're not in the correct spot. These are checked on the send side, but it doesn't hurt to double check
     if(globalState==LOOKING_FOR_BABY){
       baby_found_struct * recv=(baby_found_struct *)data;
-      baby_position_pubber.publish(getPoseStampedFromCameraInfo(static_cast<uint8_t>(recv->rotation), recv->combinedDistanceData.distance(), recv->combinedDistanceData.angle(), recv->combinedDistanceData.targetFacingAngle(), "candle_camera"));
+      baby_position_pubber.publish(getPoseStampedFromCameraInfo(static_cast<uint8_t>(recv->rotation), recv->combinedDistanceData.distance(), recv->combinedDistanceData.angle(), recv->combinedDistanceData.targetFacingAngle(), "baby_camera"));
     }
   }
   void candle_found_pub(__u8* data){

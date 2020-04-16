@@ -20,7 +20,7 @@
 
 /* Author: Brian Gerkey */
 
-//TODO make it worked with tiled maps
+//OVERKILL_TODO make it worked with tiled maps
 
 #include <algorithm>
 #include <vector>
@@ -1349,6 +1349,8 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
     // TODO: set maximum rate for publishing
     if (!m_force_update)
     {
+      //OVERKILL_NOTE I think this is where I steal their estimates turn them into tiled estimates, put them into another kd tree, find the clusters, then rewrite the code below to use this new kd tree rather than the default one
+      //OVERILL NOTE: I need to create a pf_sample_set_t which has all of these points into their tiled version, and change all references to set below into that pf_sample_set_t
       geometry_msgs::PoseArray cloud_msg;
       cloud_msg.header.stamp = ros::Time::now();
       cloud_msg.header.frame_id = global_frame_id_;
@@ -1373,12 +1375,14 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
     int max_weight_hyp = -1;
     std::vector<amcl_hyp_t> hyps;
     hyps.resize(pf_->sets[pf_->current_set].cluster_count);
+    //OVERKILL_NOTE copies all the clusters into hypotheses
     for(int hyp_count = 0;
         hyp_count < pf_->sets[pf_->current_set].cluster_count; hyp_count++)
     {
       double weight;
       pf_vector_t pose_mean;
       pf_matrix_t pose_cov;
+      //OVERKILL_NOTE This doesn't actually need the whole pf_ this is just a wrapper for pf_.current_set.get all of these things.
       if (!pf_get_cluster_stats(pf_, hyp_count, &weight, &pose_mean, &pose_cov))
       {
         ROS_ERROR("Couldn't get stats on cluster %d", hyp_count);
@@ -1428,12 +1432,14 @@ AmclNode::laserReceived(const sensor_msgs::LaserScanConstPtr& laser_scan)
         {
           // Report the overall filter covariance, rather than the
           // covariance for the highest-weight cluster
+
           //p.covariance[6*i+j] = hyps[max_weight_hyp].pf_pose_cov.m[i][j];
           p.pose.covariance[6*i+j] = set->cov.m[i][j];
         }
       }
       // Report the overall filter covariance, rather than the
       // covariance for the highest-weight cluster
+
       //p.covariance[6*5+5] = hyps[max_weight_hyp].pf_pose_cov.m[2][2];
       p.pose.covariance[6*5+5] = set->cov.m[2][2];
 

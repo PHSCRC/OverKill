@@ -10,7 +10,7 @@ class LaserFilter{
   ros::Subscriber subLaser = nh.subscribe("raw_laser", 1000, rawLaserCallback);
   ros::Publisher scanPub = nh.advertise<sensor_msgs::LaserScan>("scan", 1000);
 
-  //TODO create this
+  //OVERKILL_TODO create this
   std::unordered_map<std::size_t, bool> isSafe = loadSafeFromDisk();
 
   void raw_laser_callback(sensor_msgs::LaserScan* rawLaserScan){

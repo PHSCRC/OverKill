@@ -1,0 +1,103 @@
+<launch>
+  <!-- all of the static publishing is done first -->
+
+  <!-- baby_camera and candle_camera transforms in the form r*cos(n*d_theta+offset_theta), r*sin(n*d_theta+offset_theta), 0, 0, n*d_theta+offset_theta -->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="baby_camera0_link" args="0.15 0 0 0 0 0 rotate_base baby_camera0" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="baby_camera1_link" args="0.1213525492	0.08816778784	0	0	0	0.6283185307 rotate_base baby_camera1" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="baby_camera2_link" args="0.04635254916	0.1426584774	0	0	0	1.256637061 rotate_base baby_camera2" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="baby_camera3_link" args="-0.04635254916	0.1426584774	0	0	0	1.884955592 rotate_base baby_camera3" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="baby_camera4_link" args="-0.1213525492	0.08816778784	0	0	0	2.513274123 rotate_base baby_camera4" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="baby_camera5_link" args="-0.15	0	0	0	0	3.141592654 rotate_base baby_camera5" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="baby_camera6_link" args="-0.1213525492	-0.08816778784	0	0	0	3.769911184 rotate_base baby_camera6" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="baby_camera7_link" args="-0.04635254916	-0.1426584774	0	0	0	4.398229715 rotate_base baby_camera7" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="baby_camera8_link" args="0.04635254916	-0.1426584774	0	0	0	5.026548246 rotate_base baby_camera8" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="baby_camera9_link" args="0.1213525492	-0.08816778784	0	0	0	5.654866776 rotate_base baby_camera9" />
+
+  <node pkg="tf2_ros" type="static_transform_publisher" name="candle_camera0_link" args="0.15 0 0 0 0 0 rotate_base candle_camera0" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="candle_camera1_link" args="0.1213525492	0.08816778784	0	0	0	0.6283185307 rotate_base candle_camera1" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="candle_camera2_link" args="0.04635254916	0.1426584774	0	0	0	1.256637061 rotate_base candle_camera2" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="candle_camera3_link" args="-0.04635254916	0.1426584774	0	0	0	1.884955592 rotate_base candle_camera3" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="candle_camera4_link" args="-0.1213525492	0.08816778784	0	0	0	2.513274123 rotate_base candle_camera4" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="candle_camera5_link" args="-0.15	0	0	0	0	3.141592654 rotate_base candle_camera5" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="candle_camera6_link" args="-0.1213525492	-0.08816778784	0	0	0	3.769911184 rotate_base candle_camera6" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="candle_camera7_link" args="-0.04635254916	-0.1426584774	0	0	0	4.398229715 rotate_base candle_camera7" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="candle_camera8_link" args="0.04635254916	-0.1426584774	0	0	0	5.026548246 rotate_base candle_camera8" />
+  <node pkg="tf2_ros" type="static_transform_publisher" name="candle_camera9_link" args="0.1213525492	-0.08816778784	0	0	0	5.654866776 rotate_base candle_camera9" />
+
+  <!-- our rotation is probably not exactly aligned with our wheel center, so this corrects for thtat-->
+  <node pkg="tf2_ros" type="static_transform_publisher" name="rotate_base_link" args="-0.1 0 0 0 0 0 base_link rotate_base" />
+
+  <node pkg="Overkill" type="IAndO" name="CAN_IAndO" />
+
+  <node pkg="Overkill" type="LaserFilter" name="rplidar_laser_filter" args="raw_laser0"/>
+  <node pkg="rplidar" type="rplidarNode" name="rplidar0">
+    <param name="frame_id" value="raw_laser0"/>
+    <param name="scan_mode" value="boost"/>
+  </node>
+
+  <node pkg="Overkill" type="tiled_amcl" name="overkill_tiled_amcl">
+    <param name="odom_model_type" value="diff"/>
+    <param name="odom_alpha5" value="0.1"/>
+    <param name="transform_tolerance" value="0.2" />
+    <param name="laser_max_beams" value="30"/>
+    <param name="min_particles" value="500"/>
+    <param name="max_particles" value="5000"/>
+    <param name="kld_err" value="0.05"/>
+    <param name="kld_z" value="0.99"/>
+    <param name="odom_alpha1" value="0.2"/>
+    <param name="odom_alpha2" value="0.2"/>
+    <!-- translation std dev, m -->
+    <param name="odom_alpha3" value="0.8"/>
+    <param name="odom_alpha4" value="0.2"/>
+    <param name="laser_z_hit" value="0.5"/>
+    <param name="laser_z_short" value="0.05"/>
+    <param name="laser_z_max" value="0.05"/>
+    <param name="laser_z_rand" value="0.5"/>
+    <param name="laser_sigma_hit" value="0.2"/>
+    <param name="laser_lambda_short" value="0.1"/>
+    <param name="laser_lambda_short" value="0.1"/>
+    <param name="laser_model_type" value="likelihood_field"/>
+    <!-- <param name="laser_model_type" value="beam"/> -->
+    <param name="laser_likelihood_max_dist" value="2.0"/>
+    <param name="update_min_d" value="0.2"/>
+    <param name="update_min_a" value="0.5"/>
+
+    <param name="odom_frame_id" value="odom"/>
+    <param name="map_frame_id" value="static_map"/>
+    <param name="base_frame_id" value="base_link"/>
+
+    <param name="resample_interval" value="1"/>
+    <param name="transform_tolerance" value="0.1"/>
+    <param name="recovery_alpha_slow" value="0.0"/>
+    <param name="recovery_alpha_fast" value="0.0"/>
+  </node>
+
+  <node pkg="gmapping" type="slam_gmapping" name="overkill_slam_gmapping">
+    <param name="map_update_interval" value="2.5"/>
+
+    <param name="maxUrange" value="1.5"/>
+    <param name="maxRange" value="2"/>
+
+    <param name="minimumScore" value="50"/>
+    <param name="linearUpdate" value="0.1"/>
+    <param name="angularUpdate" value="0.5" />
+
+    <param name="xmin" value="-10"/>
+    <param name="ymin" value="-10"/>
+    <param name="xmax" value="10"/>
+    <param name="ymax" value="10"/>
+    <param name="delta" value="0.01"/>
+  </node>
+
+  <!-- move base setup OVERKILL_TODO: set this up properly-->
+  <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
+    <rosparam file="$(find my_robot_name_2dnav)/costmap_common_params.yaml" command="load" ns="global_costmap" />
+    <rosparam file="$(find my_robot_name_2dnav)/costmap_common_params.yaml" command="load" ns="local_costmap" />
+    <rosparam file="$(find my_robot_name_2dnav)/local_costmap_params.yaml" command="load" />
+    <rosparam file="$(find my_robot_name_2dnav)/global_costmap_params.yaml" command="load" />
+    <rosparam file="$(find my_robot_name_2dnav)/base_local_planner_params.yaml" command="load" />
+ </node>
+
+ <node pkg="Overkill" type="state_and_goal_manager" name="manager"/>
+
+</launch>
