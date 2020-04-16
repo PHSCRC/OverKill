@@ -1,6 +1,21 @@
 #include <arpa/inet.h>
 
 #pragma pack(push, 1)
+
+enum GlobalState{
+  STARTING_UP=0,
+  WAITING_FOR_SOUND,
+  DRIVING_TO_MAZE_2,
+  LOOKING_FOR_BABY,
+  PICKED_UP_BABY,
+  DROPPED_BABY,
+  CANDLE_SEARCH_MAZE_2,
+  EXT_CANDLE_1,
+  CANDLE_SEARCH_MAZE_1,
+  EXT_CANDLE_2,
+  EXT_CANDLE_3
+}
+
 //htons/l overloads
 uint32_t hton(uint32_t t){
   return htonl(t);
@@ -19,6 +34,13 @@ uint16_t ntoh(uint16_t t){
 }
 uint16_t ntoh(uint8_t t){
   return t;
+}
+
+
+float toStdPos(float angle){
+  while(angle<0){angle+=2*M_PI;}
+  while(angle>=2*M_PI){angle-=2*M_PI;}
+  return angle;
 }
 
 //base types
@@ -66,9 +88,30 @@ public:
   }
 };
 
+template<int max, bool isSigned, bool doubleWidth=true>
+class fixed_point;
+
 template<int max>
-class fixed_point{
+class fixed_point<max, true, true>{
     int16_t representation;
+public:
+    fixed_point(float a){
+        representation=a/max*32767;
+    }
+    fixed_point(){
+        representation=0;
+    }
+    operator float32() const{
+        return (float32)representation*max/32767;
+    }
+    operator float64() const{
+        return (float64)representation*max/32767;
+    }
+};
+
+template<int max>
+class fixed_point<max, false, true>{
+    uint16_t representation;
 public:
     fixed_point(float a){
         representation=a/max*65535;
@@ -84,17 +127,98 @@ public:
     }
 };
 
+template<int max>
+class fixed_point<max, true, false>{
+    int8_t representation;
+public:
+    fixed_point(float a){
+        representation=a/max*127;
+    }
+    fixed_point(){
+        representation=0;
+    }
+    operator float32() const{
+        return (float32)representation*max/127;
+    }
+    operator float64() const{
+        return (float64)representation*max/127;
+    }
+};
+
+template<int max>
+class fixed_point<max, false, false>{
+    uint8_t representation;
+public:
+    fixed_point(float a){
+        representation=a/max*255;
+    }
+    fixed_point(){
+        representation=0;
+    }
+    operator float32() const{
+        return (float32)representation*max/255;
+    }
+    operator float64() const{
+        return (float64)representation*max/255;
+    }
+};
+
+class CombinedDistanceData{
+  uint32_t data;
+  static constexpr uint32_t elevenBitMask=0x7FF;
+  static constexpr uint32_t tenBitMask=0x3FF;
+public:
+  CombinedDistanceData(): data(0) {}
+  CombinedDistanceData(float dist, float ang, float targetFacingAng){
+    setDistance(dist);
+    setAngle(ang);
+    setTargetFacingAngle(targetFacingAng);
+  }
+  float64 distance() const{
+    return float64(tenBitMask & data>>22)/1023*2;
+  }
+  float64 angle() const{
+    return float64(elevenBitMask & data>>11)/2047*7;
+  }
+  float64 targetFacingAngle() const{
+    return float64(elevenBitMask & data)/2047*7;
+  }
+  void setDistance(float64 distF){
+    uint16_t dist=distF/2*1023;
+    data=(data & ~(tenBitMask<<22)) | (dist & tenBitMask)<<22;
+  }
+  void setAngle(float64 angF){
+    uint16_t ang=angF/7*2047;
+    data=(data & ~(elevenBitMask<<11)) | (ang & elevenBitMask)<<11;
+  }
+  void setTargetFacingAngle(float64 angF){
+    uint16_t ang=angF/7*2047;
+    data=(data & ~elevenBitMask) | (ang & elevenBitMask);
+  }
+};
+
 //id calculation
 constexpr uint16_t MAX_CAN_ID=0x7FF;
 
 enum {
-  synchronised_time_priority,
+  synchronised_time_priority=0,
   cmd_vel_priority,
   odom_odrive_priority,
+  odom_mouse_priority,
   light_sensor_priority,
+  global_state_priority,
+  baby_found_priority,
+  candle_found_priority,
+  move_stat_baby_priority,
+  move_stat_candle_priority,
+  pickup_stat_baby_priority,
+  ext_stat_candle_priority,
+  set_handle_priority,
+  microphone_on_priority,
   _last_message,
   GREATEST_MESSAGE_PRIORITY=_last_message-1
 };
+
 
 constexpr uint16_t ID_PER_PRIORITY=MAX_CAN_ID/GREATEST_MESSAGE_PRIORITY;
 
@@ -123,17 +247,83 @@ struct cmd_vel_struct{
   static constexpr uint16_t id=idProvider(cmd_vel_priority);
   static constexpr uint8_t size=4;
 
-  flipped<fixed_point<2>> vX;
-  flipped<fixed_point<14>> vTheta;
+  flipped<fixed_point<2, true>> vX;
+  flipped<fixed_point<14, false>> vTheta;
 };
 
 struct odom_struct{
   static constexpr uint8_t size=4;
 
-  flipped<fixed_point<1>> dX;
-  flipped<fixed_point<1>> dY;
-  flipped<fixed_point<7>> dTheta;
+  flipped<fixed_point<1, true>> dX;
+  flipped<fixed_point<1, true>> dY;
+  flipped<fixed_point<7, false>> dTheta;
 };
+
+struct global_state_struct{
+  static constexpr uint16_t id=idProvider(global_state_priority);
+  static constexpr uint8_t size=1;
+
+  flipped<uint8_t> globalState;
+};
+
+struct baby_found_struct{
+  static constexpr uint16_t id=idProvider(baby_found_priority);
+  static constexpr uint8_t size=8;
+
+  //this gets us 0.35cm resolution, probably better than what we're measuring anyway
+  flipped<CombinedDistanceData> combinedDistanceData;
+  timestamp ts;
+  flipped<uint8_t> rotation;
+};
+struct candle_found_struct{
+  static constexpr uint16_t id=idProvider(candle_found_priority);
+  static constexpr uint8_t size=7;
+
+  flipped<CombinedDistanceData> combinedDistanceData;
+  timestamp ts;
+  flipped<uint8_t> rotation;
+};
+
+struct move_stat_baby_struct{
+  static constexpr uint16_t id=idProvider(move_stat_baby_priority);
+  static constexpr uint8_t size=2;
+
+  flipped<uint8_t> response;
+};
+struct move_stat_candle_struct{
+  static constexpr uint16_t id=idProvider(move_stat_candle_priority);
+  static constexpr uint8_t size=2;
+
+  flipped<uint8_t> response;
+};
+
+struct pickup_stat_baby_struct{
+  static constexpr uint16_t id=idProvider(pickup_stat_baby_priority);
+  static constexpr uint8_t size=2;
+
+  flipped<uint8_t> update;
+};
+struct ext_stat_candle_struct{
+  static constexpr uint16_t id=idProvider(ext_stat_candle_priority);
+  static constexpr uint8_t size=2;
+
+  flipped<uint8_t> update;
+};
+
+struct set_handle_struct{
+  static constexpr uint16_t id=idProvider(set_handle_priority);
+  static constexpr uint8_t size=1;
+
+  flipped<uint8_t> ledBitSet;
+};
+
+struct microphone_on_struct{
+  static constexpr uint16_t id=idProvider(microphone_on_priority);
+  static constexpr uint8_t size=1;
+
+  flipped<uint8_t> unused;
+};
+
 
 struct synchronised_time_struct{
   static constexpr uint16_t id=idProvider(synchronised_time_priority);

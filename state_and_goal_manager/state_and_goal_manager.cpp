@@ -47,28 +47,46 @@ struct State{
   tf2_ros::TransformListener tfListener(tfBuffer);
   tf2_ros::TransformBroadcaster tfBroadcaster;
 
+  ros::Publisher baby_move_stat_pubber;
+  ros::Publisher candle_move_stat_pubber;
+  ros::Publisher maze_publisher;
+
+
+
+  ros::Nodehandle& nh;
+
+
+
+  State(ros::Nodehandle& n){
+    nh=n;
+    baby_move_stat_pubber=nh.adverstise<std_msgs::Byte>("baby_move_stat", 10);
+    candle_move_stat_pubber=nh.adverstise<std_msgs::Byte>("candle_move_stat", 10);
+    maze_publisher=nh.adverstise<std_msgs::Byte>("maze_number",10);
+  }
+
   const bool rampedHallway=false;
   const geometry_msgs::Quaternion facingUp={0,0,0,1};
   const geometry_msgs::Quaternion facingDown={0,0,1,0};
-  const geometry_msgs::Quaternion facingOneTwenty={0,0,0.866025404,0.5};
+  const geometry_msgs::Quaternion facingSixty={0,0,0.5,0.866025404};
 
   const geometry_msgs::Pose maze1RampStart={{1.22,2.45,0}, facingUp};
   //the bottom of the static_map
   const geometry_msgs::Pose maze2RampStart={{1.22,0,0}, facingDown};
 
+x
 
   //TODO all of these things
   //30 back
-  const geometry_msgs::TransformStamped goalPoseFromBaby={std_msgs::Header(), "",
+  const geometry_msgs::TransformStamped goalPoseFromBaby={{0, ros::Time(0), "map"}, "map",
     {{-0.3, 0, 0}, geometry_msgs::Quaternion()}
   };
   //20 back
-  const geometry_msgs::TransformStamped pickupPoseFromBaby={std_msgs::Header(), "",
+  const geometry_msgs::TransformStamped pickupPoseFromBaby={{0, ros::Time(0), "map"}, "map",
     {{-0.2, 0, 0}, geometry_msgs::Quaternion()}
   };
 
   //20cm back
-  const geometry_msgs::TransformStamped extinguishPoseFromCandle={std_msgs::Header(), "",
+  const geometry_msgs::TransformStamped extinguishPoseFromCandle={{0, ros::Time(0), "map"}, "map",
    {{-0.2, 0, 0}, geometry_msgs::Quaternion()}
   };
 
@@ -85,11 +103,9 @@ struct State{
   //messages that need to be stored
   sensor_msgs::LaserScan latest_rawScan;
   bool lightSensor;
-  uint8_t globalState; //0= starting up; 1=waiting for sound //2=driving to baby //3=picked up baby //4=dropped baby //5=extinguished candle 1 //6=extinguishCandle 2 //7=extinguished candle 3 (done)
-  bool seeingBaby;
+  GlobalState globalState; //0= starting up; 1=waiting for sound //2=driving to maze 2 //3=looking for baby //4=picked up baby //5=dropped baby //6=searching for candle in maze 2 //7=extinguished candle 1 //8=searching for candle in maze 1 //9=extinguishedCandle 2 //10=extinguished candle 3 (done)
   geometry_msgs::PoseStamped latestBabyGoalPose;
   geometry_msgs::PoseStamped latestBabyPickupPose;
-  bool seeingCandle;
   geometry_msgs::PoseStamped latestCandleGoalPose;
 
   int whichMazeAreWeIn=1;
@@ -132,19 +148,19 @@ struct State{
   void globalStateCallback(const std_msgs::Byte* state){
     globalState=*state;
   }
-  void lightSensorCallback(const std_msgs::Bool* onOff){
+  void lightSensorCallback(const overkill_msgs::BoolStamped* onOff){
     lightSensor=*onOff;
   }
-  void babyCallback(const geometry_msgs::PoseStamped* baby_msg){
-    tf2_ros::doTransform(*baby_msg, latestCandleGoalPose, extinguishPoseFromCandle);
-    latestCandleGoalPose.header.stamp=baby_msg.header.stamp;
-  }
   void candleCallback(const geometry_msgs::PoseStamped* candle_msg){
-    tf2_ros::doTransform(*candle_msg, latestBabyGoalPose, goalPoseFromBaby);
-    latestBabyGoalPose.header.stamp=candle_msg.header.stamp;
+    tf2_ros::doTransform(*candle_msg, latestCandleGoalPose, extinguishPoseFromCandle);
+    latestCandleGoalPose.header.stamp=candle_msg.header.stamp;
+  }
+  void babyCallback(const geometry_msgs::PoseStamped* baby_msg){
+    tf2_ros::doTransform(*baby_msg, latestBabyGoalPose, goalPoseFromBaby);
+    latestBabyGoalPose.header.stamp=baby_msg.header.stamp; //the time
 
-    tf2_ros::doTransform(*candle_msg, latestBabyGoalPose, pickupPoseFromBaby);
-    latestBabyGoalPose.header.stamp=candle_msg.header.stamp;
+    tf2_ros::doTransform(*baby_msg, latestBabyGoalPose, pickupPoseFromBaby);
+    latestBabyGoalPose.header.stamp=baby_msg.header.stamp;
   }
 };
 
@@ -159,7 +175,7 @@ inline void waitForDestination(const State& state, const ros::Duration timeBetwe
     ros::spinOnce();
   }
 }
-inline void waitForGlobalState(State& state, uint8_t whatAreWeWaitingFor){
+inline void waitForGlobalState(State& state, GlobalState whatAreWeWaitingFor){
   while(ros::ok() && state.notStopping && state.globalState!=whatAreWeWaitingFor){
     ros::spinOnce();
   }
@@ -258,6 +274,7 @@ inline void moveToAndOverRamp(State& state, uint8 fromMaze){
   state.whichMazeAreWeIn=state.whichMazeAreWeIn%2+1;
   ros::service::call("enable_amcl");
   ros::service::call("global_localization");
+  state.maze_publisher.publish(state.whichMazeAreWeIn);
   //give amcl some time to actually have a decent estimate
   wait(state, ros::Duration(1));
 }
@@ -265,15 +282,15 @@ inline void moveToAndOverRamp(State& state, uint8 fromMaze){
 inline bool sweep(State& state, bool stopOnBaby, bool stopOnCandle){
   move_base_msgs::MoveBaseGoal goal;
   goal.target_pose.header.frame_id = "base_link";
-  for(int i=0; i<3; ++i){
+  for(int i=0; i<6; ++i){
     goal.target_pose.header.stamp = ros::Time::now();
-    goal.target_pose.pose.orientation=facingOneTwenty;
+    goal.target_pose.pose.orientation=facingSixty;
     waitForDestination(state);
-    wait(0.3);
-    if(stopOnBaby && state.seeingBaby){
+    wait(0.3); //wait for the camera to figure it out and for us to receive it
+    if(stopOnBaby && (ros::Time::now()-state.latestBabyGoalPose.header.stamp).toSec()<0.5){
       return true;
     }
-    if(stopOnCandle && state.seeingCandle){
+    if(stopOnCandle && (ros::Time::now()-state.latestBabyGoalPose.header.stamp).toSec()<0.5){
       return true;
     }
   }
@@ -289,11 +306,11 @@ inline void searchForBabyAndCandle(State& state){
     goal.target_pose.header.stamp = ros::Time::now();
     state.mbac.sendGoal(goal);
     //callbacks should automatically add things to possibleCandleLocation and take care of foundBaby
-    while(ros::ok() && state.notStopping && !state.seeingBaby && !state.mbac.waitForResult(ros::Duration(0.05))){
+    while(ros::ok() && state.notStopping && !(ros::Time::now()-state.latestBabyGoalPose.header.stamp).toSec()<0.5 && !state.mbac.waitForResult(ros::Duration(0.05))){
       ros::spinOnce();
     }
     stopMoving(state);
-    if(state.seeingBaby){
+    if((ros::Time::now()-state.latestBabyGoalPose.header.stamp).toSec()<0.5){
       state.lastRoomSearchedBeforeReturn=i;
       return;
     }
@@ -314,11 +331,20 @@ inline void pickUpBaby(State& state){
   wait(state, ros::Duration(0.5));
 
   goal.target_pose=state.latestBabyPickupPose;
+
+  //tell them we're in position, we no longer want updates about the baby from here on out
+  state.baby_move_stat_pubber.publish(1);
+
   state.mbac.sendGoal(goal);
   while(ros::ok() && state.notStopping && !state.mbac.waitForResult(ros::Duration(0.1))){
     ros::spinOnce();
   }
-  waitForGlobalState(state, 3);
+
+  //tell them to actually pick it up
+  state.baby_move_stat_pubber.publish(2);
+
+  //this should automatically update if we get a pickup_Stat_baby message
+  waitForGlobalState(state, PICKED_UP_BABY);
   state.gottenBaby=true;
 }
 
@@ -401,11 +427,11 @@ inline searchForCandle(State& state, int maze){
     goal.target_pose.pose=roomSearchLocations[i];
     goal.target_pose.header.stamp = ros::Time::now();
     state.mbac.sendGoal(goal);
-    while(ros::ok() && state.notStopping && !state.seeingCandle && !state.mbac.waitForResult(ros::Duration(0.05))){
+    while(ros::ok() && state.notStopping && !(ros::Time::now()-state.latestCandleGoalPose.header.stamp).toSec()<0.5 && !state.mbac.waitForResult(ros::Duration(0.05))){
       ros::spinOnce();
     }
     stopMoving(state);
-    if(seeingCandle){
+    if((ros::Time::now()-state.latestCandleGoalPose.header.stamp).toSec()<0.5){
       ros::spinOnce();
       state.lastRoomSearchedBeforeReturn=i;
       return;
@@ -420,7 +446,8 @@ inline searchForCandle(State& state, int maze){
 
 inline void extinguishCandle(State& state){
   moveToMovingTarget(state, &state.latestCandleGoalPose);
-  waitForGlobalState(state, 5);
+  state.candle_move_stat_pubber.publish(1);
+  waitForGlobalState(state, DROPPED_BABY);
 }
 
 inline searchAndExtinguishCandles(State& state){
@@ -452,7 +479,7 @@ inline void startup(State& state){
   ros::service::call("global_localization");
 
   //wait for the sound
-  waitForGlobalState(state, 2);
+  waitForGlobalState(state, DRIVING_TO_MAZE_2);
   doEverything();
 }
 
@@ -460,11 +487,13 @@ int main(int argc, char** argv){
   ros::init(argc, argv, "simple_navigation_goals");
   Nodehandle nh;
 
-  State state();
+  State state(nh);
 
-  ros::Subscriber laserSub = n.subscribe("raw_laser", 1, &State::rawLaserCallback, &state);
-  ros::Subscriber globalStateSub = n.subscribe("global_state", 5, &State::globalStateCallback, &state);
-  ros::Subscriber globalStateSub = n.subscribe("light_sensor", 3, &State::lightSensorCallback, &state);
+  ros::Subscriber laserSub = nh.subscribe("raw_laser", 1, &State::rawLaserCallback, &state);
+  ros::Subscriber globalStateSub = nh.subscribe("global_state", 5, &State::globalStateCallback, &state);
+  ros::Subscriber lightSensorSub = nh.subscribe("light_sensor", 3, &State::lightSensorCallback, &state);
+  ros::Subscriber candlePositionSub = nh.subscribe("candle_position", 3, &State::candleCallback, &state);
+  ros::Subscriber babyPositionSub = nh.subscribe("baby_position", 3, &State::babyCallback, &state);
 
   //publish all the static transforms once a second
   nh.createTimer(ros::Duration(1), &State::temporaryMapToStaticMapBroadcaster, &state);
